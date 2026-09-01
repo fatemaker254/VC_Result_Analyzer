@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SGPA Report Generator</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --panel2: #16213a;
+    --accent: #3b82f6;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --green: #22c55e;
+    --red: #ef4444;
+    --gold: #f59e0b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 32px 16px;
+  }
+  .container { max-width: 1080px; margin: 0 auto; }
+  h1 { font-size: 1.8rem; margin-bottom: 4px; }
+  h2 { font-size: 1.3rem; }
+  h3 { font-size: 1.05rem; }
+  .subtitle { color: var(--muted); margin-bottom: 28px; }
+
+  .card {
+    background: var(--panel);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 24px;
+    border: 1px solid #334155;
+  }
+  .card.nested {
+    background: var(--panel2);
+    margin-top: 16px;
+  }
+
+  .upload-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  input[type="file"], input[type="text"] {
+    color: var(--text);
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 8px 10px;
+  }
+  input[type="file"] { flex: 1; min-width: 240px; }
+  input[type="text"] { width: 140px; }
+
+  label.field-label {
+    font-size: 0.85rem;
+    color: var(--muted);
+    display: block;
+    margin-bottom: 4px;
+  }
+
+  .field-group { display: flex; flex-direction: column; }
+
+  button {
+    background: var(--accent);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  button:hover { background: #2563eb; }
+  button:disabled { background: #475569; cursor: not-allowed; }
+
+  .download-btn { background: var(--green); }
+  .download-btn:hover { background: #16a34a; }
+  .download-btn.small { padding: 6px 14px; font-size: 0.85rem; }
+
+  .status { margin-top: 12px; color: var(--muted); font-size: 0.9rem; }
+  .error { color: var(--red); margin-top: 12px; }
+  .warning { color: var(--gold); margin-top: 12px; font-size: 0.88rem; }
+
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+    margin-top: 16px;
+  }
+  .metric-box {
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 10px;
+    padding: 14px;
+    text-align: center;
+  }
+  .metric-box .num { font-size: 1.4rem; font-weight: 700; }
+  .metric-box .label { color: var(--muted); font-size: 0.75rem; margin-top: 4px; }
+  .metric-box .pct { color: var(--accent); font-size: 0.78rem; }
+
+  .charts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+  }
+  .charts-grid img {
+    width: 100%;
+    border-radius: 8px;
+    background: white;
+  }
+
+  .meta-line { color: var(--muted); font-size: 0.85rem; margin-top: 8px; }
+
+  table.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 14px;
+    font-size: 0.88rem;
+  }
+  table.data-table th, table.data-table td {
+    border: 1px solid #334155;
+    padding: 6px 10px;
+    text-align: right;
+  }
+  table.data-table th:first-child, table.data-table td:first-child { text-align: left; }
+  table.data-table th { background: #0f172a; color: var(--muted); }
+  table.data-table tr.aggregate-row { font-weight: 700; background: #0f172a; }
+
+  ol.top3-list { padding-left: 20px; }
+  ol.top3-list li { margin-bottom: 4px; }
+
+  .dept-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  #resultsSection, #comparisonSection, #departmentsSection { display: none; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>SGPA Report Generator</h1>
+  <p class="subtitle">Upload one department's mark-sheet for a single report, or several departments'
+  sheets at once to also get a cross-department comparison.</p>
+
+  <div class="card">
+    <div class="upload-row">
+      <input type="file" id="fileInput" accept=".xlsx,.xls" multiple />
+      <div class="field-group">
+        <label class="field-label" for="semesterInput">Semester</label>
+        <input type="text" id="semesterInput" placeholder="e.g. III" />
+      </div>
+      <button id="uploadBtn">Analyze</button>
+    </div>
+    <div class="status" id="statusMsg"></div>
+    <div class="error" id="errorMsg"></div>
+    <div class="warning" id="warningMsg"></div>
+  </div>
+
+  <!-- Single-department result (shown when exactly 1 file was analyzed) -->
+  <div class="card" id="resultsSection">
+    <div class="dept-header">
+      <h2 id="singleDeptTitle">Report</h2>
+      <button class="download-btn" id="singleDownloadBtn">Download .docx Report</button>
+    </div>
+    <div class="meta-line" id="singleMetaLine"></div>
+    <div class="metrics-grid" id="singleMetricsGrid"></div>
+    <div class="charts-grid" id="singleChartsGrid"></div>
+  </div>
+
+  <!-- Cross-department comparison (shown when 2+ files were analyzed) -->
+  <div class="card" id="comparisonSection">
+    <div class="dept-header">
+      <h2>Department-wise Comparison</h2>
+      <button class="download-btn" id="comparisonDownloadBtn">Download Comparison Report</button>
+    </div>
+    <div class="meta-line" id="comparisonMetaLine"></div>
+
+    <h3>Table 1: Aggregate and Subject-wise Result</h3>
+    <table class="data-table" id="table1"></table>
+
+    <h3>Table 2: Department-wise Performance</h3>
+    <div class="charts-grid" id="comparisonChart1Grid"></div>
+
+    <h3>Top 3 Departments (by % cleared)</h3>
+    <ol class="top3-list" id="top3List"></ol>
+
+    <h3>Table 3: Students' Performance in terms of SGPA</h3>
+    <table class="data-table" id="table3"></table>
+
+    <div class="charts-grid" id="comparisonChart2Grid"></div>
+  </div>
+
+  <!-- Individual department cards (shown when 2+ files were analyzed) -->
+  <div id="departmentsSection">
+    <h2>Individual Department Reports</h2>
+    <div id="departmentCards"></div>
+  </div>
+</div>
+
+<script>
+const API_BASE = "";
+
+const fileInput = document.getElementById("fileInput");
+const semesterInput = document.getElementById("semesterInput");
+const uploadBtn = document.getElementById("uploadBtn");
+const statusMsg = document.getElementById("statusMsg");
+const errorMsg = document.getElementById("errorMsg");
+const warningMsg = document.getElementById("warningMsg");
+
+const resultsSection = document.getElementById("resultsSection");
+const comparisonSection = document.getElementById("comparisonSection");
+const departmentsSection = document.getElementById("departmentsSection");
+
+let currentBatchId = null;
+
+const METRIC_LABELS = {
+  all_cleared: "All Papers Cleared",
+  fail: "Fail (>=1 paper)",
+  sgpa_below_5: "SGPA < 5",
+  sgpa_5_to_7_5: "SGPA 5 - 7.5",
+  sgpa_above_7_5: "SGPA > 7.5",
+};
+
+uploadBtn.addEventListener("click", async () => {
+  errorMsg.textContent = "";
+  warningMsg.textContent = "";
+  const files = fileInput.files;
+  if (!files || files.length === 0) {
+    errorMsg.textContent = "Please choose at least one Excel file.";
+    return;
+  }
+
+  const formData = new FormData();
+  for (const f of files) formData.append("files", f);
+  if (semesterInput.value.trim()) formData.append("semester", semesterInput.value.trim());
+
+  uploadBtn.disabled = true;
+  statusMsg.textContent = "Uploading and analyzing... this may take a few seconds.";
+  resultsSection.style.display = "none";
+  comparisonSection.style.display = "none";
+  departmentsSection.style.display = "none";
+
+  try {
+    const res = await fetch(`${API_BASE}/api/upload-batch`, { method: "POST", body: formData });
+    const data = await res.json();
+
+    if (!res.ok) throw new Error(data.error || "Upload failed.");
+
+    if (data.file_errors && data.file_errors.length > 0) {
+      warningMsg.textContent = "Some files were skipped: " +
+        data.file_errors.map(fe => `${fe.file} (${fe.error})`).join("; ");
+    }
+
+    renderResults(data);
+    statusMsg.textContent = "Analysis complete.";
+  } catch (err) {
+    errorMsg.textContent = err.message;
+    statusMsg.textContent = "";
+  } finally {
+    uploadBtn.disabled = false;
+  }
+});
+
+function renderResults(data) {
+  currentBatchId = data.batch_id;
+  const departments = data.departments;
+
+  if (departments.length === 1) {
+    renderSingleDepartment(departments[0], data.batch_id);
+  } else {
+    renderComparison(data);
+    renderDepartmentCards(departments, data.batch_id);
+  }
+}
+
+function renderMetricsGrid(container, metrics) {
+  container.innerHTML = "";
+  for (const [key, label] of Object.entries(METRIC_LABELS)) {
+    const m = metrics[key];
+    const box = document.createElement("div");
+    box.className = "metric-box";
+    box.innerHTML = `
+      <div class="num">${m.count}</div>
+      <div class="label">${label}</div>
+      <div class="pct">${m.percent}%</div>
+    `;
+    container.appendChild(box);
+  }
+}
+
+function renderChartsGrid(container, charts) {
+  container.innerHTML = "";
+  for (const [name, url] of Object.entries(charts)) {
+    const img = document.createElement("img");
+    img.src = `${API_BASE}${url}`;
+    img.alt = name;
+    container.appendChild(img);
+  }
+}
+
+function renderSingleDepartment(dept, batchId) {
+  document.getElementById("singleDeptTitle").textContent = `${dept.department_name} Report`;
+  document.getElementById("singleMetaLine").textContent =
+    `Total students: ${dept.total_students}  |  Total papers detected: ${dept.total_papers}`;
+  renderMetricsGrid(document.getElementById("singleMetricsGrid"), dept.metrics);
+  renderChartsGrid(document.getElementById("singleChartsGrid"), dept.charts);
+
+  document.getElementById("singleDownloadBtn").onclick = () => {
+    window.location.href = `${API_BASE}/api/batch/${batchId}/department/${dept.department_code}/download`;
+  };
+
+  resultsSection.style.display = "block";
+}
+
+function renderComparison(data) {
+  const comparison = data.comparison;
+  const rows = comparison.rows;
+  const agg = comparison.aggregate;
+
+  document.getElementById("comparisonMetaLine").textContent =
+    `Departments compared: ${rows.length}` + (data.semester ? `  |  Semester: ${data.semester}` : "");
+
+  const t1 = document.getElementById("table1");
+  t1.innerHTML = `
+    <tr><th>Dept/Subject</th><th>Appeared</th><th>Cleared</th><th>Not Cleared</th><th>Cleared %</th><th>Not Cleared %</th></tr>
+    ${rows.map(r => `<tr>
+      <td>${r.department_name}</td><td>${r.students_appeared}</td><td>${r.cleared}</td>
+      <td>${r.not_cleared}</td><td>${r.cleared_pct.toFixed(2)}</td><td>${r.not_cleared_pct.toFixed(2)}</td>
+    </tr>`).join("")}
+    <tr class="aggregate-row">
+      <td>AGGREGATE</td><td>${agg.students_appeared}</td><td>${agg.cleared}</td>
+      <td>${agg.not_cleared}</td><td>${agg.cleared_pct.toFixed(2)}</td><td>${agg.not_cleared_pct.toFixed(2)}</td>
+    </tr>
+  `;
+
+  const t3 = document.getElementById("table3");
+  t3.innerHTML = `
+    <tr><th>Dept/Subject</th><th>Appeared</th>
+        <th>SGPA&lt;5 No.</th><th>SGPA&lt;5 %</th>
+        <th>SGPA 5-7.5 No.</th><th>SGPA 5-7.5 %</th>
+        <th>SGPA&gt;7.5 No.</th><th>SGPA&gt;7.5 %</th></tr>
+    ${rows.map(r => `<tr>
+      <td>${r.department_name}</td><td>${r.students_appeared}</td>
+      <td>${r.sgpa_below_5.count}</td><td>${r.sgpa_below_5.percent.toFixed(2)}</td>
+      <td>${r.sgpa_5_to_7_5.count}</td><td>${r.sgpa_5_to_7_5.percent.toFixed(2)}</td>
+      <td>${r.sgpa_above_7_5.count}</td><td>${r.sgpa_above_7_5.percent.toFixed(2)}</td>
+    </tr>`).join("")}
+    <tr class="aggregate-row">
+      <td>AGGREGATE</td><td>${agg.students_appeared}</td>
+      <td>${agg.sgpa_below_5.count}</td><td>${agg.sgpa_below_5.percent.toFixed(2)}</td>
+      <td>${agg.sgpa_5_to_7_5.count}</td><td>${agg.sgpa_5_to_7_5.percent.toFixed(2)}</td>
+      <td>${agg.sgpa_above_7_5.count}</td><td>${agg.sgpa_above_7_5.percent.toFixed(2)}</td>
+    </tr>
+  `;
+
+  const top3List = document.getElementById("top3List");
+  top3List.innerHTML = comparison.top3.map(t =>
+    `<li>${t.department_name} — ${t.cleared} out of ${t.students_appeared} students @ ${t.cleared_pct.toFixed(2)}%</li>`
+  ).join("");
+
+  const chart1 = document.getElementById("comparisonChart1Grid");
+  chart1.innerHTML = "";
+  if (comparison.charts.dept_comparison) {
+    const img = document.createElement("img");
+    img.src = `${API_BASE}${comparison.charts.dept_comparison}`;
+    chart1.appendChild(img);
+  }
+
+  const chart2 = document.getElementById("comparisonChart2Grid");
+  chart2.innerHTML = "";
+  if (comparison.charts.sgpa_comparison) {
+    const img = document.createElement("img");
+    img.src = `${API_BASE}${comparison.charts.sgpa_comparison}`;
+    chart2.appendChild(img);
+  }
+
+  document.getElementById("comparisonDownloadBtn").onclick = () => {
+    window.location.href = `${API_BASE}/api/batch/${data.batch_id}/comparison/download`;
+  };
+
+  comparisonSection.style.display = "block";
+}
+
+function renderDepartmentCards(departments, batchId) {
+  const container = document.getElementById("departmentCards");
+  container.innerHTML = "";
+
+  for (const dept of departments) {
+    const card = document.createElement("div");
+    card.className = "card nested";
+
+    const header = document.createElement("div");
+    header.className = "dept-header";
+    header.innerHTML = `
+      <h3>${dept.department_name} (${dept.total_students} students, ${dept.total_papers} papers)</h3>
+      <button class="download-btn small">Download Report</button>
+    `;
+    header.querySelector("button").onclick = () => {
+      window.location.href = `${API_BASE}/api/batch/${batchId}/department/${dept.department_code}/download`;
+    };
+    card.appendChild(header);
+
+    const metricsGrid = document.createElement("div");
+    metricsGrid.className = "metrics-grid";
+    card.appendChild(metricsGrid);
+    renderMetricsGrid(metricsGrid, dept.metrics);
+
+    const chartsGrid = document.createElement("div");
+    chartsGrid.className = "charts-grid";
+    card.appendChild(chartsGrid);
+    renderChartsGrid(chartsGrid, dept.charts);
+
+    container.appendChild(card);
+  }
+
+  departmentsSection.style.display = "block";
+}
+</script>
+</body>
+</html>
